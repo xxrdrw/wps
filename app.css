@@ -218,13 +218,30 @@ html, body {
   background: rgba(0,0,0,.92);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
-.lightbox img { max-width: 100%; max-height: 70vh; object-fit: contain; }
+#lbImgWrap {
+  width: 100%; height: 72vh;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; touch-action: none;
+}
+#lbImg {
+  max-width: 100%; max-height: 100%; object-fit: contain;
+  transform-origin: center center; will-change: transform;
+}
 .lb-top {
-  position: absolute; top: 14px; left: 14px; right: 14px;
-  display: flex; justify-content: space-between; align-items: center;
+  position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); left: 14px; right: 14px;
+  display: flex; justify-content: space-between; align-items: center; z-index: 6;
 }
 .lb-code { color: #ffd94a; font-size: 13px; }
-.lb-bottom { position: absolute; bottom: 30px; left: 20px; right: 20px; }
+.lb-idx { color: #fff; font-size: 13px; background: rgba(0,0,0,.55); padding: 2px 10px; border-radius: 10px; }
+.lb-arrow {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
+  width: 44px; height: 64px; border: none; border-radius: 10px;
+  background: rgba(255,255,255,.14); color: #fff; font-size: 30px; cursor: pointer;
+}
+.lb-arrow:active { background: rgba(255,255,255,.3); }
+.lb-arrow-l { left: 8px; }
+.lb-arrow-r { right: 8px; }
+.lb-bottom { position: absolute; bottom: calc(30px + env(safe-area-inset-bottom, 0px)); left: 20px; right: 20px; }
 .lb-bottom .btn { margin: 6px 0; }
 
 /* ===== 模态框 ===== */

@@ -223,13 +223,16 @@
     </div>
   </div>
 
-  <!-- 图片大图预览 -->
+  <!-- 图片大图预览：左右滑动切图 + 双指缩放 -->
   <div id="lightbox" class="lightbox" style="display:none">
     <div class="lb-top">
       <span id="lbCode" class="lb-code"></span>
+      <span id="lbIdx" class="lb-idx"></span>
       <button id="btnLbClose" class="icon-btn">✕</button>
     </div>
-    <img id="lbImg" alt="预览">
+    <button id="lbPrev" class="lb-arrow lb-arrow-l" aria-label="上一张">‹</button>
+    <div id="lbImgWrap"><img id="lbImg" alt="预览"></div>
+    <button id="lbNext" class="lb-arrow lb-arrow-r" aria-label="下一张">›</button>
     <div class="lb-bottom">
       <button id="btnLbVerify" class="btn btn-secondary">防伪验真</button>
       <button id="btnLbDelete" class="btn btn-danger">删除此照片</button>

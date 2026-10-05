@@ -844,18 +844,102 @@ new MutationObserver(() => {
   });
 }).observe(document.body, { childList: true, subtree: true });
 
-/* ---------- 大图预览 ---------- */
+/* ---------- 大图预览：左右滑动切图 + 双指缩放/平移 ---------- */
 let lbItemId = null, lbImgId = null;
-function openLightbox(imgId, itemId) {
-  lbImgId = imgId; lbItemId = itemId;
-  const meta = Store.imgMeta[imgId];
+let lbIdx = 0, lbImgs = [], lbScale = 1, lbTx = 0, lbTy = 0, lbLastTap = 0;
+function lbApply() { $('lbImg').style.transform = `translate(${lbTx}px, ${lbTy}px) scale(${lbScale})`; }
+function lbReset() { lbScale = 1; lbTx = 0; lbTy = 0; lbApply(); }
+function lbImgsOf() {
+  const it = Store.items.find(x => x.id === lbItemId);
+  return it ? (it.images || []) : [];
+}
+function lbShowImg(id) {
+  lbImgId = id;
+  const meta = Store.imgMeta[id];
   $('lbCode').textContent = meta ? '防伪码：' + meta.code : '';
-  Store.idbGet('images', imgId).then(blob => {
+  Store.idbGet('images', id).then(blob => {
     if (!blob) return;
-    $('lbImg').src = URL.createObjectURL(blob);
-    $('lightbox').style.display = 'flex';
+    const url = URL.createObjectURL(blob);
+    const img = $('lbImg');
+    img.onload = null;
+    img.src = url;
+    lbReset();
   });
 }
+function lbShow(idx) {
+  lbImgs = lbImgsOf();
+  if (!lbImgs.length) { $('lightbox').style.display = 'none'; return; }
+  lbIdx = ((idx % lbImgs.length) + lbImgs.length) % lbImgs.length;
+  lbShowImg(lbImgs[lbIdx]);
+  $('lbIdx').textContent = (lbIdx + 1) + ' / ' + lbImgs.length;
+  $('lightbox').style.display = 'flex';
+}
+function openLightbox(imgId, itemId) {
+  lbItemId = itemId;
+  lbImgs = lbImgsOf();
+  const i = lbImgs.indexOf(imgId);
+  lbShow(i >= 0 ? i : 0);
+}
+/* 触摸：单指水平滑动切图；双指捏合缩放；放大后单指拖动平移；双击缩放 */
+let lbPinch = null, lbPan = null, lbSlide = null;
+const lbWrap = $('lbImgWrap');
+lbWrap.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const ts = e.touches;
+  if (ts.length === 2) {
+    lbPinch = { d: Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY), s: lbScale, tx: lbTx, ty: lbTy };
+    lbPan = null; lbSlide = null;
+  } else if (ts.length === 1) {
+    if (lbPinch) {
+      lbPan = { x: ts[0].clientX, y: ts[0].clientY, tx: lbTx, ty: lbTy };
+      lbPinch = null; lbSlide = null;
+    } else if (lbScale > 1) {
+      lbPan = { x: ts[0].clientX, y: ts[0].clientY, tx: lbTx, ty: lbTy };
+      lbSlide = null;
+    } else {
+      lbSlide = { x: ts[0].clientX, y: ts[0].clientY, moved: false };
+      lbPan = null;
+    }
+  }
+}, { passive: false });
+lbWrap.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const ts = e.touches;
+  if (ts.length === 2 && lbPinch) {
+    const d = Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
+    lbScale = Math.min(5, Math.max(1, lbPinch.s * d / Math.max(1, lbPinch.d)));
+    lbApply();
+  } else if (ts.length === 1 && lbPan) {
+    lbTx = lbPan.tx + (ts[0].clientX - lbPan.x);
+    lbTy = lbPan.ty + (ts[0].clientY - lbPan.y);
+    lbApply();
+  } else if (ts.length === 1 && lbSlide) {
+    if (Math.abs(ts[0].clientX - lbSlide.x) > 8) lbSlide.moved = true;
+  }
+}, { passive: false });
+lbWrap.addEventListener('touchend', (e) => {
+  if (e.touches.length > 0) return;
+  if (lbPinch) { lbPinch = null; lbPan = null; lbSlide = null; return; }
+  if (lbPan) { lbPan = null; return; }
+  if (lbSlide) {
+    const dx = e.changedTouches[0].clientX - lbSlide.x;
+    const dy = e.changedTouches[0].clientY - lbSlide.y;
+    const moved = lbSlide.moved;
+    lbSlide = null;
+    if (moved && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      if (dx < 0) lbShow(lbIdx + 1); else lbShow(lbIdx - 1);
+      return;
+    }
+    if (!moved) {
+      const now = Date.now();
+      if (now - lbLastTap < 300) {
+        lbScale = lbScale > 1 ? 1 : 2.5; lbTx = 0; lbTy = 0; lbApply(); lbLastTap = 0;
+      } else { lbLastTap = now; }
+    }
+  }
+}, { passive: false });
+$('lbPrev').onclick = () => lbShow(lbIdx - 1);
+$('lbNext').onclick = () => lbShow(lbIdx + 1);
 $('btnLbClose').onclick = () => { $('lightbox').style.display = 'none'; };
 $('btnLbVerify').onclick = async () => {
   if (!lbImgId) return;
@@ -891,9 +975,11 @@ $('btnLbDelete').onclick = async () => {
   try { await Store.idbDel('images', lbImgId); } catch (e) {}
   delete imgCache[lbImgId];
   Store.save();
-  $('lightbox').style.display = 'none';
   renderDetail(lbItemId);
   renderList();
+  const remaining = lbImgsOf();
+  if (remaining.length) { lbShow(lbIdx % remaining.length); }
+  else { $('lightbox').style.display = 'none'; }
 };
 
 /* ---------- 水印相机 ---------- */
