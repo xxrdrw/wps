@@ -27,6 +27,11 @@ async function ensureLib(kind) {
   }).catch((e) => { delete _libLoading[kind]; throw e; });
   return _libLoading[kind];
 }
+/* 首次进入即后台预加载全部库（不阻塞首屏；加载失败静默，用到时 ensureLib 再兜底） */
+function preloadLibs() {
+  ensureLib('xlsx').catch(() => {});
+  ensureLib('exceljs').catch(() => {});
+}
 
 /* ---------- 常量 ---------- */
 const BUSY_SHEETS = ['调试检查清单', '调试功能检查单（厂外）', '电气特殊特性检查清单', '抬车臂'];
@@ -1564,6 +1569,7 @@ try {
 
 /* ---------- 启动 ---------- */
 (async function init() {
+  preloadLibs();  // 后台预下载表格库，登录/浏览期间完成，解析导出时秒开
   if (!isAuthed()) { showView('view-login'); return; }
   enterApp();
 })();
