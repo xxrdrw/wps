@@ -244,7 +244,7 @@ function showView(name) {
   $(name).style.display = 'block';
   currentView = name;
   $('topTitle').textContent = TITLES[name] || '换电站调试检查表';
-  $('btnBack').style.display = (name === 'view-home' || name === 'view-camera' || name === 'view-login') ? 'none' : 'block';
+  $('btnBack').style.display = (name === 'view-home' || name === 'view-login') ? 'none' : 'block';
 }
 
 /* ---------- 设置页：高德 Key / 水印模板 / 照片尺寸 ---------- */
@@ -1424,10 +1424,13 @@ $('btnChooseExcel').onclick = async () => {
 };
 $('btnExport').onclick = () => exportExcel();
 $('btnBack').onclick = () => {
-  if (currentView === 'view-detail') { renderList(); showView('view-list'); }
+  if (currentView === 'view-camera') { exitCamera(); }
+  else if (currentView === 'view-detail') { renderList(); showView('view-list'); }
   else if (currentView === 'view-list') { renderHome(); showView('view-home'); }
   else if (currentView === 'view-export') { renderList(); showView('view-list'); }
+  else if (currentView === 'view-settings') { showView('view-home'); }
 };
+try { $('btnCamClose').onclick = () => { exitCamera(); }; } catch (e) { recordError('btnCamClose 绑定失败', e && e.stack ? e.stack : String(e)); }
 $('btnSaveMeasured').onclick = () => {
   const it = Store.items.find(x => x.id === currentItemId);
   if (!it) return;
