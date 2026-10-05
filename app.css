@@ -29,20 +29,20 @@ html, body {
   position: sticky; top: 0; z-index: 50;
   display: flex; align-items: center; justify-content: space-between;
   background: var(--bar); color: #fff;
-  padding: 10px 10px; box-shadow: 0 1px 0 rgba(0,0,0,.08);
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 10px 10px; box-shadow: 0 1px 0 rgba(0,0,0,.08);
 }
 #topbar h1 { font-size: 16px; margin: 0; font-weight: 600; flex: 1; text-align: center; letter-spacing: .5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .icon-btn {
   background: transparent; color: #fff; border: none;
-  min-width: 44px; height: 40px; padding: 0 8px;
+  min-width: 48px; height: 44px; padding: 0 8px;
   font-size: 16px; line-height: 1; cursor: pointer; border-radius: 8px;
 }
 .icon-btn:active { background: rgba(255,255,255,.14); }
-#btnBack.icon-btn { font-size: 26px; font-weight: 300; line-height: 1; }
+#btnBack.icon-btn { font-size: 30px; font-weight: 300; line-height: 1; }
 #btnSettings { font-size: 15px; }
 
 /* ===== 视图切换 ===== */
-.view { display: none; padding: 12px 14px 34px; }
+.view { display: none; padding: 12px 14px calc(34px + env(safe-area-inset-bottom, 0px)); }
 .view.active { display: block; }
 
 /* ===== 按钮 ===== */
@@ -190,7 +190,7 @@ html, body {
   padding: 6px 14px; font-size: 13px; display: none;
 }
 .cam-controls {
-  position: absolute; left: 0; right: 0; bottom: 30px;
+  position: absolute; left: 0; right: 0; bottom: calc(30px + env(safe-area-inset-bottom, 0px));
   display: flex; align-items: center; justify-content: space-around; flex-wrap: wrap;
 }
 .cam-btn {
