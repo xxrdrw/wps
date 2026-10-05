@@ -2,18 +2,31 @@
 /* ===== 换电站调试检查表 App 核心逻辑 ===== */
 'use strict';
 
-/* ---------- 核心组件加载自检 ---------- */
-(function checkLibs() {
-  const missing = [];
-  if (typeof XLSX === 'undefined') missing.push('XLSX(表格解析)');
-  if (typeof ExcelJS === 'undefined') missing.push('ExcelJS(表格导出)');
-  if (typeof sha256 === 'undefined') missing.push('sha256(防伪码)');
-  if (!missing.length) return;
-  const div = document.createElement('div');
-  div.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#d93026;color:#fff;padding:14px;z-index:99999;font-size:14px;text-align:center;line-height:1.7';
-  div.textContent = '核心组件加载失败：' + missing.join('、') + '。请卸载本应用后重新安装最新版本，或联系开发者。';
-  document.body.appendChild(div);
-})();
+/* ---------- 核心库按需加载（解析/导出时才从 CDN 加载，首屏零依赖秒开） ---------- */
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('组件加载失败：' + src + '，请检查网络后重试'));
+    document.head.appendChild(s);
+  });
+}
+const _libLoading = {};
+async function ensureLib(kind) {
+  if (kind === 'xlsx' && typeof XLSX !== 'undefined') return;
+  if (kind === 'exceljs' && typeof ExcelJS !== 'undefined') return;
+  if (_libLoading[kind]) return _libLoading[kind];
+  const url = kind === 'xlsx'
+    ? 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'
+    : 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+  _libLoading[kind] = loadScript(url).then(() => {
+    if ((kind === 'xlsx' && typeof XLSX === 'undefined') || (kind === 'exceljs' && typeof ExcelJS === 'undefined')) {
+      throw new Error(kind + ' 加载后仍不可用');
+    }
+  }).catch((e) => { delete _libLoading[kind]; throw e; });
+  return _libLoading[kind];
+}
 
 /* ---------- 常量 ---------- */
 const BUSY_SHEETS = ['调试检查清单', '调试功能检查单（厂外）', '电气特殊特性检查清单', '抬车臂'];
@@ -45,9 +58,13 @@ function randStr(n) {
   for (let i = 0; i < n; i++) s += c[Math.floor(Math.random() * c.length)];
   return s;
 }
-function genAntiFake(stationId, itemId, ts, inspector, random) {
+async function genAntiFake(stationId, itemId, ts, inspector, random) {
   const raw = `${stationId}|${itemId}|${ts}|${inspector}|${random}|${SALT}`;
-  return sha256(raw).toUpperCase().slice(0, 12);
+  if (crypto && crypto.subtle) {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase().slice(0, 12);
+  }
+  return sha256(raw).toUpperCase().slice(0, 12); // 极旧环境降级（HTTPS 下不会走到）
 }
 
 /* ---------- 防伪签名层（设备端密码学签名，离线可用） ---------- */
@@ -780,7 +797,7 @@ async function addGalleryPhotos() {
     const blob = new Blob([buf], { type: 'image/jpeg' });
     const imgId = `img_${Date.now()}_${randStr(6)}`;
     await Store.idbPut('images', imgId, blob);
-    const code = genAntiFake(task.id, it.id, Date.now(), task.inspector || '', randStr(6));
+    const code = await genAntiFake(task.id, it.id, Date.now(), task.inspector || '', randStr(6));
     const createdAt = Date.now();
     let hash = '', sig = '';
     try {
@@ -1086,7 +1103,7 @@ async function takePhoto() {
     }
   }
   const task = Store.task;
-  const code = genAntiFake(task.id, camItem.id, Date.now(), task.inspector || '', randStr(6));
+  const code = await genAntiFake(task.id, camItem.id, Date.now(), task.inspector || '', randStr(6));
   const edge = Store.photoEdge || IMG_MAX_EDGE;
   const scale = Math.min(1, edge / Math.max(v.videoWidth, v.videoHeight));
   const W = Math.round(v.videoWidth * scale), H = Math.round(v.videoHeight * scale);
@@ -1139,7 +1156,7 @@ async function galleryPhoto() {
   try { buf = await Bridge.readLocalFile(path); } catch (e) { Bridge.toast('读取相册照片失败'); return; }
   if (Bridge.deleteTemp) Bridge.deleteTemp(path);
   const task = Store.task;
-  const code = genAntiFake(task.id, camItem.id, Date.now(), task.inspector || '', randStr(6));
+  const code = await genAntiFake(task.id, camItem.id, Date.now(), task.inspector || '', randStr(6));
   const edge = Store.photoEdge || IMG_MAX_EDGE;
   // 解码图片
   const blob0 = new Blob([buf], { type: 'image/jpeg' });
@@ -1221,6 +1238,8 @@ async function exportExcel() {
     const srcBlob = await Store.idbGet('source', 'source');
     if (!srcBlob) throw new Error('原表格数据缺失，请重新选择 Excel');
     const buf = await srcBlob.arrayBuffer();
+    setExportProgress(3, '正在加载导出组件…');
+    await ensureLib('exceljs');
     const wb = new ExcelJS.Workbook();
     setExportProgress(15, '正在解析原表格结构…');
     await wb.xlsx.load(buf);
@@ -1379,6 +1398,8 @@ $('btnChooseExcel').onclick = async () => {
     loadText.textContent = '正在读取文件…';
     const buf = await Bridge.readExcel(handle);
     if (!buf || !buf.byteLength) throw new Error('未能读取到文件内容，请重新选择');
+    loadText.textContent = '正在加载表格解析组件…';
+    await ensureLib('xlsx');
     loadText.textContent = '正在解析检查项（大文件可能需要十几秒）…';
     const r = parseWorkbook(buf);
     if (!r.items.length) throw new Error('未在表格中找到可用的检查项，请确认选择了正确的调试检查表');
