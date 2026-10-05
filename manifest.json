@@ -1,0 +1,15 @@
+{
+  "name": "wps表格插图手机版",
+  "short_name": "wps插图",
+  "description": "换电站调试检查表：解析检查项、填写实测、水印相机拍照留证、导出带图 Excel",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f7fa",
+  "theme_color": "#182337",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
