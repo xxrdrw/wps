@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#182337">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="wps表格插图手机版">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>wps表格插图手机版</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- 登录页 -->
+  <section id="view-login" class="view active">
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="login-logo">WPS</div>
+        <h2 class="login-title">wps表格插图手机版</h2>
+        <p class="login-sub">请输入账号密码登录</p>
+        <input id="inpUser" class="login-input" type="text" placeholder="账号" autocomplete="off">
+        <input id="inpPass" class="login-input" type="password" placeholder="密码" autocomplete="off">
+        <button id="btnLogin" class="btn btn-primary btn-block">登 录</button>
+        <div id="loginMsg" class="login-msg" style="display:none"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 顶部栏 -->
+  <header id="topbar">
+    <button id="btnBack" class="icon-btn" style="display:none" aria-label="返回">‹</button>
+    <h1 id="topTitle">wps表格插图手机版</h1>
+    <div id="topRight">
+      <button id="btnSettings" class="icon-btn" aria-label="设置">设置</button>
+    </div>
+  </header>
+
+  <!-- ========== 首页 ========== -->
+  <section id="view-home" class="view active">
+    <div class="hero">
+      <div class="logo">WPS</div>
+      <h2>表格插图工作台</h2>
+      <p class="sub">选择调试检查表 Excel，逐项填写实测结果，水印相机拍照留证，一键导出带图归档</p>
+    </div>
+
+    <button id="btnChooseExcel" class="btn btn-primary btn-big">选择调试检查表 Excel</button>
+
+    <div class="tips">
+      <div class="tip-row">全程本地运行，无需网络</div>
+      <div class="tip-row">原表只读，导出为独立新文件</div>
+      <div class="tip-row">照片自动叠加水印与防伪编码</div>
+    </div>
+
+    <div id="recentTask" class="card" style="display:none"></div>
+
+    <button id="btnErrorLog" class="btn btn-secondary btn-small" style="display:none">错误日志</button>
+
+    <div id="loadMask" class="mask" style="display:none">
+      <div class="mask-box">
+        <div class="spinner"></div>
+        <div id="loadText">正在解析 Excel…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 检查项列表页 ========== -->
+  <section id="view-list" class="view">
+    <div class="progress-card">
+      <div class="progress-row">
+        <span id="listTaskName" class="task-name"></span>
+        <span id="listProgressText" class="progress-text">0 / 0</span>
+      </div>
+      <div class="progress-bar"><div id="listProgressBar" class="progress-fill" style="width:0%"></div></div>
+      <div class="progress-sub" id="listProgressSub"></div>
+    </div>
+    <div class="action-row">
+      <button id="btnEditTask" class="btn btn-secondary">任务信息</button>
+      <button id="btnExport" class="btn btn-primary">导出 Excel 归档</button>
+    </div>
+    <div class="filter-bar">
+      <div class="chips">
+        <button id="btnFilterAll" class="chip active">全部</button>
+        <button id="btnFilterTodo" class="chip">未完成</button>
+        <button id="btnFilterDone" class="chip">已完成</button>
+      </div>
+      <input id="listSearch" class="search-input" type="search" placeholder="搜索检查项（输入2个字以上）" autocomplete="off">
+    </div>
+    <div id="sheetGroups" class="sheet-groups"></div>
+    <div id="listEmpty" class="empty" style="display:none">暂无检查项</div>
+  </section>
+
+  <!-- ========== 设置页 ========== -->
+  <section id="view-settings" class="view">
+    <div class="settings-body">
+      <div class="card">
+        <div class="card-title">高德地图 Key（拍照定位用）</div>
+        <div class="field">
+          <label>Web 服务 Key</label>
+          <input id="inpAmapKey" type="text" placeholder="粘贴高德 Web 服务 Key" autocomplete="off" spellcheck="false">
+          <div class="hint">用于拍照地点逆地理编码。高德开放平台 → 控制台 → 创建「Web服务」类型 Key。留空保存将使用内置默认 Key。</div>
+        </div>
+        <div class="action-row">
+          <button id="btnTestKey" class="btn btn-secondary">校验 Key</button>
+          <button id="btnSaveKey" class="btn btn-primary">保存</button>
+        </div>
+        <div id="keyTestResult" class="hint key-test-result" style="display:none"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">照片尺寸（最长边像素）</div>
+        <div class="hint" style="margin-bottom:8px">数值越大照片越清晰、占空间越大</div>
+        <div id="photoEdgeChips" class="chips">
+          <button class="chip" data-edge="1280">1280</button>
+          <button class="chip" data-edge="1600">1600</button>
+          <button class="chip" data-edge="2560">2560</button>
+          <button class="chip" data-edge="3840">3840</button>
+        </div>
+      </div>
+      <div class="card" id="sheetSettingsCard" style="display:none">
+        <div class="card-title">检查表设置</div>
+        <div class="hint" style="margin-bottom:8px">每个表可单独设置：检查项序号从几开始、导出时照片插入第几列（列字母或数字，如 G 或 7）。序号起始在下次导入表格后生效，照片插入列对导出立即生效。</div>
+        <div id="sheetSettingsBox"></div>
+        <div class="action-row">
+          <button id="btnSaveSheetSettings" class="btn btn-primary">保存检查表设置</button>
+        </div>
+      </div>
+      <button id="btnSettingsBack" class="btn btn-ghost">返回首页</button>
+      <button id="btnLogout" class="btn btn-danger btn-block" style="margin-top:10px">退出登录</button>
+    </div>
+  </section>
+
+  <!-- ========== 检查项详情页 ========== -->
+  <section id="view-detail" class="view">
+    <div class="detail-card">
+      <div class="detail-sheet" id="dSheet"></div>
+      <div class="detail-no" id="dNo"></div>
+      <div class="detail-desc" id="dDesc"></div>
+      <div class="detail-spec" id="dSpec"></div>
+      <div class="detail-tool" id="dTool"></div>
+      <div class="detail-status" id="dStatus"></div>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">实测结果</h3>
+      <textarea id="dMeasured" class="input-textarea" rows="2" placeholder="填写实测结果（如：710.2mm / 合格 / 已调整）"></textarea>
+      <button id="btnSaveMeasured" class="btn btn-primary btn-block">保存实测结果</button>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">现场照片（<span id="dImgCount">0</span> 张）</h3>
+      <div id="dImages" class="thumb-grid"></div>
+      <div class="action-row">
+        <button id="btnTakePhoto" class="btn btn-accent btn-block">水印相机拍照</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 水印相机页 ========== -->
+  <section id="view-camera" class="view camera-view">
+    <video id="camVideo" autoplay playsinline muted></video>
+    <canvas id="camCanvas" style="display:none"></canvas>
+    <div id="camWatermark" class="cam-watermark">
+      <div id="wmStation" class="wm-line">换电站：-</div>
+      <div id="wmItem" class="wm-line">检查项：-</div>
+      <div id="wmTime" class="wm-line">时间：-</div>
+      <div id="wmLocation" class="wm-line">地点：定位中…</div>
+      <div id="wmGeo" class="wm-line">经纬度：-</div>
+      <div id="wmInspector" class="wm-line">检查人：-</div>
+      <div id="wmCode" class="wm-line wm-code">防伪码：-</div>
+    </div>
+    <div id="camStatus" class="cam-status"></div>
+    <div id="manualLocBox" class="manual-loc" style="display:none">
+      <input id="inpManualLoc" type="text" placeholder="输入正式地点（如：广东省江门市…）" autocomplete="off">
+      <button id="btnManualLoc" class="btn btn-primary">确认地点</button>
+      <div class="hint">定位正常时会自动填写地点并收起本框；若定位慢/失败，可随时手动填写地点，确认后即可拍照</div>
+    </div>
+    <div class="cam-controls">
+      <button id="btnSwitchCam" class="cam-btn" aria-label="切换摄像头">切换</button>
+      <button id="btnShutter" class="shutter" aria-label="拍照"></button>
+      <button id="btnTorch" class="cam-btn" aria-label="闪光灯">闪光</button>
+      <button id="btnGallery" class="cam-btn" aria-label="从相册选取">相册</button>
+    </div>
+  </section>
+
+  <!-- ========== 导出页 ========== -->
+  <section id="view-export" class="view">
+    <div class="card">
+      <h3 class="card-title">导出 Excel 归档</h3>
+      <div class="export-info" id="exportInfo"></div>
+      <div class="progress-bar lg"><div id="exportProgressBar" class="progress-fill" style="width:0%"></div></div>
+      <div id="exportStatus" class="export-status">准备中…</div>
+    </div>
+    <div id="exportDone" class="card" style="display:none">
+      <h3 class="card-title">导出完成</h3>
+      <p id="exportPath" class="export-path"></p>
+      <div class="action-row">
+        <button id="btnShareFile" class="btn btn-accent btn-block" style="display:none">分享文件</button>
+        <button id="btnBackToList" class="btn btn-secondary btn-block">返回列表</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 任务信息编辑 -->
+  <div id="taskModal" class="modal" style="display:none">
+    <div class="modal-box">
+      <h3 class="modal-title">任务信息</h3>
+      <label class="modal-label">换电站名称</label>
+      <input id="tmStation" class="modal-input" type="text" placeholder="如：佛山顺德伟业大道站">
+      <label class="modal-label">落站供应商</label>
+      <input id="tmSupplier" class="modal-input" type="text" placeholder="供应商名称">
+      <label class="modal-label">落站检查人</label>
+      <input id="tmInspector" class="modal-input" type="text" placeholder="检查人姓名">
+      <label class="modal-label">落站起始时间</label>
+      <input id="tmStart" class="modal-input" type="datetime-local">
+      <div class="action-row">
+        <button id="btnTmCancel" class="btn btn-secondary">取消</button>
+        <button id="btnTmSave" class="btn btn-primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 图片大图预览 -->
+  <div id="lightbox" class="lightbox" style="display:none">
+    <div class="lb-top">
+      <span id="lbCode" class="lb-code"></span>
+      <button id="btnLbClose" class="icon-btn">✕</button>
+    </div>
+    <img id="lbImg" alt="预览">
+    <div class="lb-bottom">
+      <button id="btnLbVerify" class="btn btn-secondary">防伪验真</button>
+      <button id="btnLbDelete" class="btn btn-danger">删除此照片</button>
+    </div>
+  </div>
+
+</div>
+<script src="libs/xlsx.full.min.js"></script>
+<script src="libs/sha256.min.js"></script>
+<script src="libs/exceljs.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
