@@ -1,5 +1,5 @@
-// Service Worker v3：首次进入即预缓存全部库（含 CDN 大库），二次打开秒开，后台自动更新
-const CACHE = 'wps-station-v3';
+// Service Worker v4：首次进入即预缓存全部库（含 CDN 大库），二次打开秒开，后台自动更新
+const CACHE = 'wps-station-v4';
 const CORE = ['./index.html', './app.css', './app.js', './manifest.json', './icon-192.png', './icon-512.png', './icon-180.png'];
 const CDN_BASE = 'https://cdn.jsdelivr.net/npm/';
 const CDN_LIBS = [

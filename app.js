@@ -1,37 +1,19 @@
 
-/* ===== 换电站调试检查表 App 核心逻辑 ===== */
+/* ===== wps表格插图手机版 App 核心逻辑 ===== */
 'use strict';
 
-/* ---------- 核心库按需加载（解析/导出时才从 CDN 加载，首屏零依赖秒开） ---------- */
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('组件加载失败：' + src + '，请检查网络后重试'));
-    document.head.appendChild(s);
-  });
-}
-const _libLoading = {};
-async function ensureLib(kind) {
-  if (kind === 'xlsx' && typeof XLSX !== 'undefined') return;
-  if (kind === 'exceljs' && typeof ExcelJS !== 'undefined') return;
-  if (_libLoading[kind]) return _libLoading[kind];
-  const url = kind === 'xlsx'
-    ? 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'
-    : 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
-  _libLoading[kind] = loadScript(url).then(() => {
-    if ((kind === 'xlsx' && typeof XLSX === 'undefined') || (kind === 'exceljs' && typeof ExcelJS === 'undefined')) {
-      throw new Error(kind + ' 加载后仍不可用');
-    }
-  }).catch((e) => { delete _libLoading[kind]; throw e; });
-  return _libLoading[kind];
-}
-/* 首次进入即后台预加载全部库（不阻塞首屏；加载失败静默，用到时 ensureLib 再兜底） */
-function preloadLibs() {
-  ensureLib('xlsx').catch(() => {});
-  ensureLib('exceljs').catch(() => {});
-}
+/* ---------- 核心组件加载自检 ---------- */
+(function checkLibs() {
+  const missing = [];
+  if (typeof XLSX === 'undefined') missing.push('XLSX(表格解析)');
+  if (typeof ExcelJS === 'undefined') missing.push('ExcelJS(表格导出)');
+  if (typeof sha256 === 'undefined') missing.push('sha256(防伪码)');
+  if (!missing.length) return;
+  const div = document.createElement('div');
+  div.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#d93026;color:#fff;padding:14px;z-index:99999;font-size:14px;text-align:center;line-height:1.7';
+  div.textContent = '核心组件加载失败：' + missing.join('、') + '。请卸载本应用后重新安装最新版本，或联系开发者。';
+  document.body.appendChild(div);
+})();
 
 /* ---------- 常量 ---------- */
 const BUSY_SHEETS = ['调试检查清单', '调试功能检查单（厂外）', '电气特殊特性检查清单', '抬车臂'];
@@ -63,13 +45,9 @@ function randStr(n) {
   for (let i = 0; i < n; i++) s += c[Math.floor(Math.random() * c.length)];
   return s;
 }
-async function genAntiFake(stationId, itemId, ts, inspector, random) {
+function genAntiFake(stationId, itemId, ts, inspector, random) {
   const raw = `${stationId}|${itemId}|${ts}|${inspector}|${random}|${SALT}`;
-  if (crypto && crypto.subtle) {
-    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
-    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase().slice(0, 12);
-  }
-  return sha256(raw).toUpperCase().slice(0, 12); // 极旧环境降级（HTTPS 下不会走到）
+  return sha256(raw).toUpperCase().slice(0, 12);
 }
 
 /* ---------- 防伪签名层（设备端密码学签名，离线可用） ---------- */
@@ -166,6 +144,8 @@ const Store = {
     try { this.amapKey = localStorage.getItem('sts.amapKey') || ''; } catch (e) { this.amapKey = ''; }
     try { this.photoEdge = Number(localStorage.getItem('sts.photoEdge')) || 1600; } catch (e) { this.photoEdge = 1600; }
     try { this.sheetSettings = JSON.parse(localStorage.getItem('sts.sheetSettings')) || {}; } catch (e) { this.sheetSettings = {}; }
+    try { this.configs = JSON.parse(localStorage.getItem('sts.configs')) || []; } catch (e) { this.configs = []; }
+    try { this.configName = localStorage.getItem('sts.configName') || ''; } catch (e) { this.configName = ''; }
     this.db = await this._openDB();
   },
   _openDB() {
@@ -216,6 +196,8 @@ const Store = {
     try { localStorage.setItem('sts.amapKey', this.amapKey || ''); } catch (e) {}
     try { localStorage.setItem('sts.photoEdge', String(this.photoEdge || 1600)); } catch (e) {}
     try { localStorage.setItem('sts.sheetSettings', JSON.stringify(this.sheetSettings || {})); } catch (e) {}
+    try { localStorage.setItem('sts.configs', JSON.stringify(this.configs || [])); } catch (e) {}
+    try { localStorage.setItem('sts.configName', this.configName || ''); } catch (e) {}
   },
   clearTask() {
     this.task = null; this.items = []; this.imgMeta = {};
@@ -232,10 +214,11 @@ const Store = {
 };
 
 /* ---------- 页面导航 ---------- */
-const VIEWS = ['view-login', 'view-home', 'view-list', 'view-detail', 'view-camera', 'view-export', 'view-settings'];
+const VIEWS = ['view-login', 'view-home', 'view-config', 'view-list', 'view-detail', 'view-camera', 'view-export', 'view-settings'];
 const TITLES = {
   'view-login': '登录',
   'view-home': 'wps表格插图手机版',
+  'view-config': '选择配置',
   'view-list': '检查项列表',
   'view-detail': '检查项详情',
   'view-camera': '水印相机',
@@ -248,8 +231,8 @@ function showView(name) {
   VIEWS.forEach(v => { $(v).style.display = 'none'; });
   $(name).style.display = 'block';
   currentView = name;
-  $('topTitle').textContent = TITLES[name] || '换电站调试检查表';
-  $('btnBack').style.display = (name === 'view-home' || name === 'view-login') ? 'none' : 'block';
+  $('topTitle').textContent = TITLES[name] || 'wps表格插图手机版';
+  $('btnBack').style.display = (name === 'view-home' || name === 'view-camera' || name === 'view-login') ? 'none' : 'block';
 }
 
 /* ---------- 设置页：高德 Key / 水印模板 / 照片尺寸 ---------- */
@@ -318,6 +301,210 @@ function saveSheetSettings() {
   Bridge.toast('已保存。序号起始下次导入表格后生效，照片列对导出立即生效');
 }
 function CSS_ESC(s) { return String(s).replace(/"/g, '\\"').replace(/\s/g, '_'); }
+
+/* ---------- 型号配置：管理 / 选择 / 下载匹配 ---------- */
+const DEFAULT_CONFIGS = [
+  { name: '3.0', url: '' },
+  { name: '3.2', url: '' },
+  { name: '3.2MIIX', url: '' },
+  { name: '3.5', url: '' }
+];
+let selectedConfig = null;   // 当前选中的配置 {name,url}
+let configData = null;       // 匹配结果 {检查项名称: {texts:[], images:[dataURL]}}
+function cfNorm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
+function getConfigs() { return (Store.configs && Store.configs.length) ? Store.configs : DEFAULT_CONFIGS; }
+function renderConfigSettings() {
+  const card = $('configSettingsCard');
+  if (!card) return;
+  card.style.display = 'block';
+  const list = getConfigs().slice();
+  const box = $('configSettingsBox');
+  if (!box) return;
+  box.innerHTML = list.map((c, i) => `
+    <div class="cs-row">
+      <input class="cs-name" data-i="${i}" value="${esc(c.name || '')}" placeholder="名称 如 3.0" autocomplete="off">
+      <input class="cs-url" data-i="${i}" value="${esc(c.url || '')}" placeholder="示例表格下载链接 https://…" autocomplete="off" spellcheck="false">
+      <button class="cs-del" data-i="${i}">删除</button>
+    </div>`).join('') || '<div class="empty">暂无配置</div>';
+  box.querySelectorAll('.cs-del').forEach(b => {
+    b.onclick = () => {
+      const arr = (Store.configs && Store.configs.length) ? Store.configs.slice() : DEFAULT_CONFIGS.slice();
+      arr.splice(Number(b.dataset.i), 1);
+      Store.configs = arr;
+      Store.save();
+      renderConfigSettings();
+    };
+  });
+}
+function saveConfigs() {
+  const list = [];
+  document.querySelectorAll('#configSettingsBox .cs-row').forEach(row => {
+    const n = row.querySelector('.cs-name').value.trim();
+    const u = row.querySelector('.cs-url').value.trim();
+    if (n) list.push({ name: n, url: u });
+  });
+  Store.configs = list;
+  Store.save();
+  renderConfigSettings();
+  Bridge.toast('配置已保存');
+}
+function openConfigView() {
+  selectedConfig = null;
+  configData = null;
+  $('configProg').style.display = 'none';
+  renderConfigButtons();
+  $('configTaskName').textContent = (Store.task && Store.task.stationName) ? ('项目：' + Store.task.stationName) : '调试检查表';
+  showView('view-config');
+}
+function renderConfigButtons() {
+  const list = getConfigs();
+  const box = $('configBtns');
+  box.innerHTML = list.map((c, i) => `
+    <div class="config-btn${selectedConfig && selectedConfig.name === c.name ? ' active' : ''}" data-i="${i}">
+      <div class="cb-name">${esc(c.name)}</div>
+      <div class="cb-url ${c.url ? '' : 'warn'}">${c.url ? '已配置下载链接' : '未配置链接（可选）'}</div>
+    </div>`).join('') || '<div class="empty">暂无配置，请到「设置 → 型号配置管理」新增</div>';
+  box.querySelectorAll('.config-btn').forEach(el => {
+    el.onclick = () => { selectedConfig = list[Number(el.dataset.i)]; renderConfigButtons(); };
+  });
+}
+async function confirmConfig() {
+  if (!selectedConfig) { Bridge.toast('请先选择一个配置'); return; }
+  if (!selectedConfig.url) {
+    // 链接非必填：未配置则直接进入检查项列表，示例说明暂不显示
+    Store.configName = selectedConfig.name;
+    Store.save();
+    renderList();
+    showView('view-list');
+    return;
+  }
+  const mask = $('loadMask');
+  const loadText = $('loadText');
+  mask.style.display = 'flex';
+  try {
+    loadText.textContent = '正在下载配置表格…';
+    const resp = await fetch(selectedConfig.url, { mode: 'cors' });
+    if (!resp.ok) throw new Error('下载失败：HTTP ' + resp.status);
+    const buf = await resp.arrayBuffer();
+    if (!buf || !buf.byteLength) throw new Error('下载内容为空');
+    loadText.textContent = '正在解析配置表格并匹配检查项…';
+    configData = await parseConfigTable(buf);
+    Store.configName = selectedConfig.name;
+    Store.save();
+    loadText.textContent = '匹配完成，正在进入检查项列表…';
+    renderList();
+    showView('view-list');
+  } catch (e) {
+    console.error(e);
+    const msg = (e && e.message) ? e.message : String(e);
+    recordError('选择配置失败：' + msg, e && e.stack);
+    alert('操作失败：' + msg);
+  } finally {
+    mask.style.display = 'none';
+  }
+}
+function cfAb2b64(buf) {
+  let u8 = buf;
+  if (!(buf instanceof Uint8Array)) u8 = new Uint8Array(buf);
+  let bin = '';
+  const CH = 0x8000;
+  for (let i = 0; i < u8.length; i += CH) bin += String.fromCharCode.apply(null, u8.subarray(i, i + CH));
+  return btoa(bin);
+}
+async function parseConfigTable(buf) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf);
+  const media = (wb.model && wb.model.media) || [];
+  const match = {};
+  wb.eachSheet((ws) => {
+    const imgsByRow = {};
+    let gimgs = [];
+    try { gimgs = ws.getImages(); } catch (e) { gimgs = []; }
+    gimgs.forEach(g => {
+      const rowN = Math.round(g.range && g.range.tl ? g.range.tl.row : -1) + 1; // 0-based -> 1-based
+      if (rowN < 1) return;
+      const med = media[g.imageId];
+      if (!med || !med.buffer) return;
+      const ext = String(med.extension || 'png').toLowerCase();
+      const mime = ext === 'jpeg' || ext === 'jpg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'bmp' ? 'image/bmp' : 'image/png';
+      let b64 = '';
+      try { b64 = cfAb2b64(med.buffer); } catch (e) { return; }
+      (imgsByRow[rowN] = imgsByRow[rowN] || []).push('data:' + mime + ';base64,' + b64);
+    });
+    let headerRow = -1, nameCol = -1;
+    const textColSet = [];
+    const rows = [];
+    ws.eachRow((row, rowNumber) => {
+      const vals = [];
+      row.eachCell({ includeEmpty: true }, (cell) => {
+        let v = cell.text != null ? cell.text : (cell.value != null ? cell.value : '');
+        if (v instanceof Date) v = v.toISOString();
+        vals.push(String(v));
+      });
+      rows.push({ rowNumber, vals });
+    });
+    for (let i = 0; i < rows.length; i++) {
+      const vals = rows[i].vals;
+      let hit = false;
+      for (let c = 0; c < vals.length; c++) {
+        const h = cfNorm(vals[c]);
+        if (!h) continue;
+        if (/名称|检查项|测试项|项目|检查内容|项\s*目/.test(h)) { if (nameCol < 0) nameCol = c; hit = true; }
+        if (/示例|说明|标准|内容|数值|参数|参考|要求/.test(h) && textColSet.indexOf(c) < 0) textColSet.push(c);
+      }
+      if (hit && headerRow < 0) headerRow = i;
+      if (headerRow >= 0 && i > headerRow && nameCol >= 0) break;
+    }
+    if (headerRow < 0 || nameCol < 0) return;
+    const textCols = textColSet.length ? textColSet : [nameCol + 1];
+    for (let i = headerRow + 1; i < rows.length; i++) {
+      const r = rows[i];
+      const key = cfNorm(r.vals[nameCol]);
+      if (!key) continue;
+      const texts = [];
+      textCols.forEach(c => { const t = cfNorm(r.vals[c]); if (t) texts.push(t); });
+      const images = imgsByRow[r.rowNumber] || [];
+      if (!texts.length && !images.length) continue;
+      const ex = match[key] || (match[key] = { texts: [], images: [] });
+      texts.forEach(t => { if (ex.texts.indexOf(t) < 0) ex.texts.push(t); });
+      images.forEach(s => { if (ex.images.indexOf(s) < 0) ex.images.push(s); });
+    }
+  });
+  return match;
+}
+function renderConfigExample(it) {
+  const card = $('configExampleCard');
+  if (!card) return;
+  if (!configData || !Store.configName) { card.style.display = 'none'; return; }
+  const key = cfNorm(it.desc);
+  const m = configData[key];
+  card.style.display = 'block';
+  const tag = $('configExampleTag');
+  if (tag) tag.textContent = '配置：' + Store.configName;
+  const body = $('configExampleBody');
+  if (!m || (!m.texts.length && !m.images.length)) {
+    body.innerHTML = '<div class="ce-empty">暂无</div>';
+    return;
+  }
+  let html = '';
+  if (m.texts.length) html += '<div class="ce-texts">' + m.texts.map(t => '<div class="ce-text">' + esc(t) + '</div>').join('') + '</div>';
+  if (m.images.length) {
+    html += '<div class="thumb-grid ce-imgs">' + m.images.map((src, i) =>
+      `<img class="ce-img" data-i="${i}" src="${src}" alt="示例图">`).join('') + '</div>';
+  }
+  body.innerHTML = html;
+  body.querySelectorAll('.ce-img').forEach(el => {
+    el.onclick = () => {
+      const big = document.createElement('div');
+      big.className = 'lightbox';
+      big.style.display = 'flex';
+      big.innerHTML = '<img src="' + el.src + '" style="max-width:92%;max-height:92%;background:#fff">';
+      big.onclick = () => big.remove();
+      document.body.appendChild(big);
+    };
+  });
+}
+
 function openSettings() {
   $('inpAmapKey').value = Store.amapKey || '';
   const r = $('keyTestResult');
@@ -325,6 +512,7 @@ function openSettings() {
   r.textContent = '';
   syncSettingsUI();
   renderSheetSettings();
+  renderConfigSettings();
   showView('view-settings');
 }
 function saveKey() {
@@ -564,7 +752,7 @@ function cellColNum(addr) { // 'B2' -> 2
 }
 function getTaskInfo(ws) {
   const info = { stationName: '', supplier: '', inspector: '', startTime: '' };
-  const labels = { '换电站名称': 'stationName', '落站供应商': 'supplier', '落站检查人': 'inspector', '落站起始时间': 'startTime' };
+  const labels = { '换电站名称': 'stationName', '项目名称': 'stationName', '落站供应商': 'supplier', '落站检查人': 'inspector', '落站起始时间': 'startTime' };
   for (const addr in ws) {
     if (!addr || addr.indexOf(':') >= 0) continue;
     const cell = ws[addr];
@@ -650,7 +838,7 @@ function renderHome() {
   rt.style.display = 'block';
   rt.innerHTML = `
     <div class="recent-title">最近任务</div>
-    <div class="recent-row">换电站：<b>${esc(Store.task.stationName) || '-'}</b></div>
+    <div class="recent-row">项目：<b>${esc(Store.task.stationName) || '-'}</b></div>
     <div class="recent-row">检查人：<b>${esc(Store.task.inspector) || '-'}</b>　供应商：<b>${esc(Store.task.supplier) || '-'}</b></div>
     <div class="recent-row">进度：<b>${p.done}/${p.total}</b> 项已完成（${p.pct}%）</div>
     <button id="btnContinue" class="btn btn-secondary">继续填写</button>`;
@@ -771,6 +959,7 @@ function renderDetail(itemId) {
   const iaBtn = document.getElementById('btnAddImages');
   if (iaBtn) iaBtn.onclick = addGalleryPhotos;
   $('btnTakePhoto').style.display = it.images.length >= MAX_IMAGES ? 'none' : 'block';
+  renderConfigExample(it);
 }
 
 /* 详情页批量添加相册图片（今日水印相机照片，不加水印，原图直接归档 + 防伪签名） */
@@ -802,7 +991,7 @@ async function addGalleryPhotos() {
     const blob = new Blob([buf], { type: 'image/jpeg' });
     const imgId = `img_${Date.now()}_${randStr(6)}`;
     await Store.idbPut('images', imgId, blob);
-    const code = await genAntiFake(task.id, it.id, Date.now(), task.inspector || '', randStr(6));
+    const code = genAntiFake(task.id, it.id, Date.now(), task.inspector || '', randStr(6));
     const createdAt = Date.now();
     let hash = '', sig = '';
     try {
@@ -844,102 +1033,18 @@ new MutationObserver(() => {
   });
 }).observe(document.body, { childList: true, subtree: true });
 
-/* ---------- 大图预览：左右滑动切图 + 双指缩放/平移 ---------- */
+/* ---------- 大图预览 ---------- */
 let lbItemId = null, lbImgId = null;
-let lbIdx = 0, lbImgs = [], lbScale = 1, lbTx = 0, lbTy = 0, lbLastTap = 0;
-function lbApply() { $('lbImg').style.transform = `translate(${lbTx}px, ${lbTy}px) scale(${lbScale})`; }
-function lbReset() { lbScale = 1; lbTx = 0; lbTy = 0; lbApply(); }
-function lbImgsOf() {
-  const it = Store.items.find(x => x.id === lbItemId);
-  return it ? (it.images || []) : [];
-}
-function lbShowImg(id) {
-  lbImgId = id;
-  const meta = Store.imgMeta[id];
+function openLightbox(imgId, itemId) {
+  lbImgId = imgId; lbItemId = itemId;
+  const meta = Store.imgMeta[imgId];
   $('lbCode').textContent = meta ? '防伪码：' + meta.code : '';
-  Store.idbGet('images', id).then(blob => {
+  Store.idbGet('images', imgId).then(blob => {
     if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const img = $('lbImg');
-    img.onload = null;
-    img.src = url;
-    lbReset();
+    $('lbImg').src = URL.createObjectURL(blob);
+    $('lightbox').style.display = 'flex';
   });
 }
-function lbShow(idx) {
-  lbImgs = lbImgsOf();
-  if (!lbImgs.length) { $('lightbox').style.display = 'none'; return; }
-  lbIdx = ((idx % lbImgs.length) + lbImgs.length) % lbImgs.length;
-  lbShowImg(lbImgs[lbIdx]);
-  $('lbIdx').textContent = (lbIdx + 1) + ' / ' + lbImgs.length;
-  $('lightbox').style.display = 'flex';
-}
-function openLightbox(imgId, itemId) {
-  lbItemId = itemId;
-  lbImgs = lbImgsOf();
-  const i = lbImgs.indexOf(imgId);
-  lbShow(i >= 0 ? i : 0);
-}
-/* 触摸：单指水平滑动切图；双指捏合缩放；放大后单指拖动平移；双击缩放 */
-let lbPinch = null, lbPan = null, lbSlide = null;
-const lbWrap = $('lbImgWrap');
-lbWrap.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-  const ts = e.touches;
-  if (ts.length === 2) {
-    lbPinch = { d: Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY), s: lbScale, tx: lbTx, ty: lbTy };
-    lbPan = null; lbSlide = null;
-  } else if (ts.length === 1) {
-    if (lbPinch) {
-      lbPan = { x: ts[0].clientX, y: ts[0].clientY, tx: lbTx, ty: lbTy };
-      lbPinch = null; lbSlide = null;
-    } else if (lbScale > 1) {
-      lbPan = { x: ts[0].clientX, y: ts[0].clientY, tx: lbTx, ty: lbTy };
-      lbSlide = null;
-    } else {
-      lbSlide = { x: ts[0].clientX, y: ts[0].clientY, moved: false };
-      lbPan = null;
-    }
-  }
-}, { passive: false });
-lbWrap.addEventListener('touchmove', (e) => {
-  e.preventDefault();
-  const ts = e.touches;
-  if (ts.length === 2 && lbPinch) {
-    const d = Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
-    lbScale = Math.min(5, Math.max(1, lbPinch.s * d / Math.max(1, lbPinch.d)));
-    lbApply();
-  } else if (ts.length === 1 && lbPan) {
-    lbTx = lbPan.tx + (ts[0].clientX - lbPan.x);
-    lbTy = lbPan.ty + (ts[0].clientY - lbPan.y);
-    lbApply();
-  } else if (ts.length === 1 && lbSlide) {
-    if (Math.abs(ts[0].clientX - lbSlide.x) > 8) lbSlide.moved = true;
-  }
-}, { passive: false });
-lbWrap.addEventListener('touchend', (e) => {
-  if (e.touches.length > 0) return;
-  if (lbPinch) { lbPinch = null; lbPan = null; lbSlide = null; return; }
-  if (lbPan) { lbPan = null; return; }
-  if (lbSlide) {
-    const dx = e.changedTouches[0].clientX - lbSlide.x;
-    const dy = e.changedTouches[0].clientY - lbSlide.y;
-    const moved = lbSlide.moved;
-    lbSlide = null;
-    if (moved && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-      if (dx < 0) lbShow(lbIdx + 1); else lbShow(lbIdx - 1);
-      return;
-    }
-    if (!moved) {
-      const now = Date.now();
-      if (now - lbLastTap < 300) {
-        lbScale = lbScale > 1 ? 1 : 2.5; lbTx = 0; lbTy = 0; lbApply(); lbLastTap = 0;
-      } else { lbLastTap = now; }
-    }
-  }
-}, { passive: false });
-$('lbPrev').onclick = () => lbShow(lbIdx - 1);
-$('lbNext').onclick = () => lbShow(lbIdx + 1);
 $('btnLbClose').onclick = () => { $('lightbox').style.display = 'none'; };
 $('btnLbVerify').onclick = async () => {
   if (!lbImgId) return;
@@ -975,11 +1080,9 @@ $('btnLbDelete').onclick = async () => {
   try { await Store.idbDel('images', lbImgId); } catch (e) {}
   delete imgCache[lbImgId];
   Store.save();
+  $('lightbox').style.display = 'none';
   renderDetail(lbItemId);
   renderList();
-  const remaining = lbImgsOf();
-  if (remaining.length) { lbShow(lbIdx % remaining.length); }
-  else { $('lightbox').style.display = 'none'; }
 };
 
 /* ---------- 水印相机 ---------- */
@@ -995,7 +1098,7 @@ async function openCamera(itemId) {
   showView('view-camera');
   $('camStatus').style.display = 'none';
   const task = Store.task;
-  $('wmStation').textContent = '换电站：' + (task.stationName || '-');
+  $('wmStation').textContent = '项目：' + (task.stationName || '-');
   $('wmItem').textContent = '检查项：' + camItem.idx + ' ' + camItem.desc;
   $('wmInspector').textContent = '检查人：' + (task.inspector || '-');
   camLocation = { addr: '', lat: '', lng: '', state: 'pending' };
@@ -1140,7 +1243,7 @@ function drawWatermark(ctx, w, h, code) {
   const lh = fs * 1.5;
   const pad = Math.max(10, Math.round(w * 0.025));
   const lines = [
-    '换电站：' + (task.stationName || '-'),
+    '项目：' + (task.stationName || '-'),
     '检查项：' + camItem.idx + ' ' + camItem.desc,
     '时间：' + fmtDateTime(Date.now()),
     '地点：' + (camLocation.addr || ('经纬度 ' + camLocation.lat + ',' + camLocation.lng)),
@@ -1194,7 +1297,7 @@ async function takePhoto() {
     }
   }
   const task = Store.task;
-  const code = await genAntiFake(task.id, camItem.id, Date.now(), task.inspector || '', randStr(6));
+  const code = genAntiFake(task.id, camItem.id, Date.now(), task.inspector || '', randStr(6));
   const edge = Store.photoEdge || IMG_MAX_EDGE;
   const scale = Math.min(1, edge / Math.max(v.videoWidth, v.videoHeight));
   const W = Math.round(v.videoWidth * scale), H = Math.round(v.videoHeight * scale);
@@ -1247,7 +1350,7 @@ async function galleryPhoto() {
   try { buf = await Bridge.readLocalFile(path); } catch (e) { Bridge.toast('读取相册照片失败'); return; }
   if (Bridge.deleteTemp) Bridge.deleteTemp(path);
   const task = Store.task;
-  const code = await genAntiFake(task.id, camItem.id, Date.now(), task.inspector || '', randStr(6));
+  const code = genAntiFake(task.id, camItem.id, Date.now(), task.inspector || '', randStr(6));
   const edge = Store.photoEdge || IMG_MAX_EDGE;
   // 解码图片
   const blob0 = new Blob([buf], { type: 'image/jpeg' });
@@ -1323,14 +1426,12 @@ async function exportExcel() {
   if (!Store.task || !Store.items.length) { Bridge.toast('暂无任务'); return; }
   showView('view-export');
   $('exportDone').style.display = 'none';
-  $('exportInfo').textContent = `换电站：${Store.task.stationName || '-'}｜检查项 ${Store.items.length} 项｜待导出图片 ${Store.items.reduce((s, x) => s + x.images.length, 0)} 张`;
+  $('exportInfo').textContent = `项目：${Store.task.stationName || '-'}｜检查项 ${Store.items.length} 项｜待导出图片 ${Store.items.reduce((s, x) => s + x.images.length, 0)} 张`;
   setExportProgress(2, '正在读取原表格…');
   try {
     const srcBlob = await Store.idbGet('source', 'source');
     if (!srcBlob) throw new Error('原表格数据缺失，请重新选择 Excel');
     const buf = await srcBlob.arrayBuffer();
-    setExportProgress(3, '正在加载导出组件…');
-    await ensureLib('exceljs');
     const wb = new ExcelJS.Workbook();
     setExportProgress(15, '正在解析原表格结构…');
     await wb.xlsx.load(buf);
@@ -1489,8 +1590,6 @@ $('btnChooseExcel').onclick = async () => {
     loadText.textContent = '正在读取文件…';
     const buf = await Bridge.readExcel(handle);
     if (!buf || !buf.byteLength) throw new Error('未能读取到文件内容，请重新选择');
-    loadText.textContent = '正在加载表格解析组件…';
-    await ensureLib('xlsx');
     loadText.textContent = '正在解析检查项（大文件可能需要十几秒）…';
     const r = parseWorkbook(buf);
     if (!r.items.length) throw new Error('未在表格中找到可用的检查项，请确认选择了正确的调试检查表');
@@ -1502,8 +1601,7 @@ $('btnChooseExcel').onclick = async () => {
     try { await Store.idbPut('source', 'source', new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); }
     catch (e2) { console.warn('原表缓存失败（不影响本次使用，导出需重新选择）', e2); }
     renderHome();
-    renderList();
-    showView('view-list');
+    openConfigView();
   } catch (e) {
     console.error(e);
     const msg = (e && e.message) ? e.message : String(e);
@@ -1515,13 +1613,11 @@ $('btnChooseExcel').onclick = async () => {
 };
 $('btnExport').onclick = () => exportExcel();
 $('btnBack').onclick = () => {
-  if (currentView === 'view-camera') { exitCamera(); }
-  else if (currentView === 'view-detail') { renderList(); showView('view-list'); }
+  if (currentView === 'view-detail') { renderList(); showView('view-list'); }
   else if (currentView === 'view-list') { renderHome(); showView('view-home'); }
+  else if (currentView === 'view-config') { renderHome(); showView('view-home'); }
   else if (currentView === 'view-export') { renderList(); showView('view-list'); }
-  else if (currentView === 'view-settings') { showView('view-home'); }
 };
-try { $('btnCamClose').onclick = () => { exitCamera(); }; } catch (e) { recordError('btnCamClose 绑定失败', e && e.stack ? e.stack : String(e)); }
 $('btnSaveMeasured').onclick = () => {
   const it = Store.items.find(x => x.id === currentItemId);
   if (!it) return;
@@ -1541,6 +1637,13 @@ $('btnSettings').onclick = openSettings;
 $('btnSettingsBack').onclick = () => { showView('view-home'); };
 $('btnSaveKey').onclick = saveKey;
 $('btnTestKey').onclick = testKey;
+$('btnConfigDone').onclick = confirmConfig;
+$('btnAddConfig').onclick = () => {
+  Store.configs = getConfigs().slice();
+  Store.configs.push({ name: '', url: '' });
+  renderConfigSettings();
+};
+$('btnSaveConfigs').onclick = saveConfigs;
 try { $('btnManualLoc').onclick = confirmManualLoc; } catch (e) { recordError('btnManualLoc 绑定失败', e && e.stack ? e.stack : String(e)); }
 try {
   document.querySelectorAll('#photoEdgeChips .chip').forEach(c => {
@@ -1655,7 +1758,6 @@ try {
 
 /* ---------- 启动 ---------- */
 (async function init() {
-  preloadLibs();  // 后台预下载表格库，登录/浏览期间完成，解析导出时秒开
   if (!isAuthed()) { showView('view-login'); return; }
   enterApp();
 })();

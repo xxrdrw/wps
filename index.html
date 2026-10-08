@@ -67,6 +67,18 @@
     </div>
   </section>
 
+  <!-- ========== 选择配置页 ========== -->
+  <section id="view-config" class="view">
+    <div class="config-body">
+      <div class="config-title">选择型号配置</div>
+      <div class="config-sub" id="configTaskName"></div>
+      <div class="config-hint">选择本次检查的设备型号，将下载该型号的示例说明表格用于逐项对照（只读参考）；未配置下载链接的型号可直接进入，示例说明显示暂无。可在「设置 → 型号配置管理」中新增、修改配置按钮与下载链接。</div>
+      <div id="configBtns" class="config-btns"></div>
+      <div id="configProg" class="config-prog" style="display:none"></div>
+      <button id="btnConfigDone" class="btn btn-primary btn-big">选择完成</button>
+    </div>
+  </section>
+
   <!-- ========== 检查项列表页 ========== -->
   <section id="view-list" class="view">
     <div class="progress-card">
@@ -127,6 +139,15 @@
           <button id="btnSaveSheetSettings" class="btn btn-primary">保存检查表设置</button>
         </div>
       </div>
+      <div class="card" id="configSettingsCard">
+        <div class="card-title">型号配置管理</div>
+        <div class="hint" style="margin-bottom:8px">配置按钮用于选择设备型号并下载该型号的示例说明表格（xlsx 链接）。按钮名称与下载链接均可新增、修改、删除；选择配置后按「检查项名称一致」匹配并显示在实测结果上方。</div>
+        <div id="configSettingsBox"></div>
+        <div class="action-row">
+          <button id="btnAddConfig" class="btn btn-secondary">新增配置</button>
+          <button id="btnSaveConfigs" class="btn btn-primary">保存配置</button>
+        </div>
+      </div>
       <button id="btnSettingsBack" class="btn btn-ghost">返回首页</button>
       <button id="btnLogout" class="btn btn-danger btn-block" style="margin-top:10px">退出登录</button>
     </div>
@@ -141,6 +162,12 @@
       <div class="detail-spec" id="dSpec"></div>
       <div class="detail-tool" id="dTool"></div>
       <div class="detail-status" id="dStatus"></div>
+    </div>
+
+    <div class="card" id="configExampleCard" style="display:none">
+      <h3 class="card-title">示例说明</h3>
+      <div class="config-example-tag" id="configExampleTag"></div>
+      <div id="configExampleBody"></div>
     </div>
 
     <div class="card">
@@ -163,7 +190,7 @@
     <video id="camVideo" autoplay playsinline muted></video>
     <canvas id="camCanvas" style="display:none"></canvas>
     <div id="camWatermark" class="cam-watermark">
-      <div id="wmStation" class="wm-line">换电站：-</div>
+      <div id="wmStation" class="wm-line">项目：-</div>
       <div id="wmItem" class="wm-line">检查项：-</div>
       <div id="wmTime" class="wm-line">时间：-</div>
       <div id="wmLocation" class="wm-line">地点：定位中…</div>
@@ -178,7 +205,6 @@
       <div class="hint">定位正常时会自动填写地点并收起本框；若定位慢/失败，可随时手动填写地点，确认后即可拍照</div>
     </div>
     <div class="cam-controls">
-      <button id="btnCamClose" class="cam-btn cam-close" aria-label="返回">返回</button>
       <button id="btnSwitchCam" class="cam-btn" aria-label="切换摄像头">切换</button>
       <button id="btnShutter" class="shutter" aria-label="拍照"></button>
       <button id="btnTorch" class="cam-btn" aria-label="闪光灯">闪光</button>
@@ -208,8 +234,8 @@
   <div id="taskModal" class="modal" style="display:none">
     <div class="modal-box">
       <h3 class="modal-title">任务信息</h3>
-      <label class="modal-label">换电站名称</label>
-      <input id="tmStation" class="modal-input" type="text" placeholder="如：佛山顺德伟业大道站">
+      <label class="modal-label">项目名称</label>
+      <input id="tmStation" class="modal-input" type="text" placeholder="如：某某项目">
       <label class="modal-label">落站供应商</label>
       <input id="tmSupplier" class="modal-input" type="text" placeholder="供应商名称">
       <label class="modal-label">落站检查人</label>
@@ -223,16 +249,13 @@
     </div>
   </div>
 
-  <!-- 图片大图预览：左右滑动切图 + 双指缩放 -->
+  <!-- 图片大图预览 -->
   <div id="lightbox" class="lightbox" style="display:none">
     <div class="lb-top">
       <span id="lbCode" class="lb-code"></span>
-      <span id="lbIdx" class="lb-idx"></span>
       <button id="btnLbClose" class="icon-btn">✕</button>
     </div>
-    <button id="lbPrev" class="lb-arrow lb-arrow-l" aria-label="上一张">‹</button>
-    <div id="lbImgWrap"><img id="lbImg" alt="预览"></div>
-    <button id="lbNext" class="lb-arrow lb-arrow-r" aria-label="下一张">›</button>
+    <img id="lbImg" alt="预览">
     <div class="lb-bottom">
       <button id="btnLbVerify" class="btn btn-secondary">防伪验真</button>
       <button id="btnLbDelete" class="btn btn-danger">删除此照片</button>
@@ -240,6 +263,9 @@
   </div>
 
 </div>
+<script src="libs/xlsx.full.min.js"></script>
+<script src="libs/sha256.min.js"></script>
+<script src="libs/exceljs.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
