@@ -1033,19 +1033,147 @@ new MutationObserver(() => {
   });
 }).observe(document.body, { childList: true, subtree: true });
 
-/* ---------- 大图预览 ---------- */
-let lbItemId = null, lbImgId = null;
-function openLightbox(imgId, itemId) {
-  lbImgId = imgId; lbItemId = itemId;
-  const meta = Store.imgMeta[imgId];
-  $('lbCode').textContent = meta ? '防伪码：' + meta.code : '';
-  Store.idbGet('images', imgId).then(blob => {
-    if (!blob) return;
-    $('lbImg').src = URL.createObjectURL(blob);
-    $('lightbox').style.display = 'flex';
-  });
+/* ---------- 大图预览（滑动切换 + 缩放） ---------- */
+let lbItemId = null, lbImgId = null, lbList = [], lbIndex = 0;
+let lbScale = 1, lbTx = 0, lbTy = 0, lbSwipe = 0, lbAnim = false;
+let lbT0 = null, lbPinch = null, lbLastTapT = 0, lbLastTapX = 0, lbLastTapY = 0;
+function lbClamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function lbApply() {
+  const img = $('lbImg');
+  if (!img) return;
+  img.style.transition = lbAnim ? 'transform .22s ease' : 'none';
+  img.style.transform = 'translate(' + lbTx + 'px,' + lbTy + 'px) scale(' + lbScale + ')';
 }
-$('btnLbClose').onclick = () => { $('lightbox').style.display = 'none'; };
+function lbLoad(id) {
+  Store.idbGet('images', id).then(blob => {
+    if (!blob) return;
+    const img = $('lbImg');
+    if (img.src) { try { URL.revokeObjectURL(img.src); } catch (e) {} }
+    img.src = URL.createObjectURL(blob);
+  });
+  const meta = Store.imgMeta[id];
+  $('lbCode').textContent = meta ? '防伪码：' + meta.code : '';
+  $('lbCount').textContent = lbList.length ? (lbIndex + 1) + ' / ' + lbList.length : '';
+  lbApply();
+}
+function lbNav(delta) {
+  if (!lbList.length) return;
+  lbIndex = (lbIndex + delta + lbList.length) % lbList.length;
+  lbImgId = lbList[lbIndex];
+  lbScale = 1; lbTx = 0; lbTy = 0; lbSwipe = 0; lbPinch = null; lbT0 = null;
+  lbAnim = true;
+  lbLoad(lbImgId);
+  lbApply();
+  setTimeout(() => { lbAnim = false; }, 260);
+}
+function openLightbox(imgId, itemId) {
+  const it = Store.items.find(x => x.id === itemId);
+  lbList = (it && it.images) ? it.images.slice() : [];
+  lbIndex = lbList.indexOf(imgId);
+  if (lbIndex < 0) lbIndex = 0;
+  lbItemId = itemId; lbImgId = lbList.length ? lbList[lbIndex] : imgId;
+  lbScale = 1; lbTx = 0; lbTy = 0; lbSwipe = 0; lbPinch = null; lbT0 = null;
+  lbLoad(lbImgId);
+  $('lightbox').style.display = 'flex';
+  lbApply();
+}
+function closeLightbox() {
+  $('lightbox').style.display = 'none';
+  lbScale = 1; lbTx = 0; lbTy = 0; lbSwipe = 0; lbPinch = null; lbT0 = null;
+}
+function lbTouchStart(e) {
+  lbAnim = false;
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    lbT0 = { x: t.clientX, y: t.clientY, tx: lbTx, ty: lbTy, scale: lbScale, t: Date.now() };
+    lbPinch = null;
+  } else if (e.touches.length === 2) {
+    const a = e.touches[0], b = e.touches[1];
+    lbPinch = { dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), scale: lbScale, tx: lbTx, ty: lbTy, mx: (a.clientX + b.clientX) / 2, my: (a.clientY + b.clientY) / 2 };
+    lbT0 = null;
+  }
+}
+function lbTouchMove(e) {
+  if (e.cancelable) e.preventDefault();
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    if (lbPinch) {
+      lbTx = lbPinch.tx + (t.clientX - lbPinch.mx);
+      lbTy = lbPinch.ty + (t.clientY - lbPinch.my);
+    } else if (lbT0 && lbScale <= 1.001) {
+      lbSwipe = t.clientX - lbT0.x;
+      lbTx = lbSwipe; lbTy = 0;
+    } else if (lbT0) {
+      lbTx = lbT0.tx + (t.clientX - lbT0.x);
+      lbTy = lbT0.ty + (t.clientY - lbT0.y);
+    }
+    lbApply();
+  } else if (e.touches.length === 2 && lbPinch) {
+    const a = e.touches[0], b = e.touches[1];
+    const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const ns = lbClamp(lbPinch.scale * dist / (lbPinch.dist || 1), 1, 4);
+    const mx = (a.clientX + b.clientX) / 2, my = (a.clientY + b.clientY) / 2;
+    lbTx = lbPinch.tx + (mx - lbPinch.mx);
+    lbTy = lbPinch.ty + (my - lbPinch.my);
+    lbScale = ns;
+    lbApply();
+  }
+}
+function lbTouchEnd(e) {
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    lbT0 = { x: t.clientX, y: t.clientY, tx: lbTx, ty: lbTy, scale: lbScale, t: Date.now() };
+    lbPinch = null;
+    return;
+  }
+  if (e.touches.length > 1) return;
+  if (lbT0) {
+    const dt = Date.now() - lbT0.t;
+    if (dt < 280 && Math.abs(lbSwipe) < 12 && lbScale <= 1.001) {
+      const now = Date.now();
+      if (now - lbLastTapT < 320 && Math.abs(lbLastTapX - lbT0.x) < 36 && Math.abs(lbLastTapY - lbT0.y) < 36) {
+        lbScale = lbScale < 1.5 ? 2.5 : 1;
+        if (lbScale === 1) { lbTx = 0; lbTy = 0; }
+        lbAnim = true; lbApply(); setTimeout(() => { lbAnim = false; }, 260);
+        lbLastTapT = 0;
+      } else {
+        lbLastTapT = now; lbLastTapX = lbT0.x; lbLastTapY = lbT0.y;
+      }
+    }
+    if (lbScale <= 1.001) {
+      if (Math.abs(lbSwipe) > 90) { lbNav(lbSwipe > 0 ? -1 : 1); }
+      else if (lbSwipe) { lbSwipe = 0; lbTx = 0; lbTy = 0; lbAnim = true; lbApply(); setTimeout(() => { lbAnim = false; }, 260); }
+    }
+    lbT0 = null;
+  }
+  if (lbPinch) { lbPinch = null; }
+  if (lbScale < 1.05) {
+    lbScale = 1; lbTx = 0; lbTy = 0; lbSwipe = 0; lbAnim = true; lbApply(); setTimeout(() => { lbAnim = false; }, 260);
+  }
+}
+function lbOnWheel(e) {
+  if (e.cancelable) e.preventDefault();
+  const old = lbScale;
+  lbScale = lbClamp(lbScale + (e.deltaY < 0 ? 0.25 : -0.25), 1, 4);
+  if (lbScale !== old) lbApply();
+}
+function lbOnDbl(e) {
+  e.preventDefault();
+  lbScale = lbScale > 1.2 ? 1 : 2.5;
+  if (lbScale === 1) { lbTx = 0; lbTy = 0; }
+  lbAnim = true; lbApply(); setTimeout(() => { lbAnim = false; }, 260);
+}
+$('btnLbClose').onclick = closeLightbox;
+$('lbPrev').onclick = () => lbNav(-1);
+$('lbNext').onclick = () => lbNav(1);
+const lbStageEl = $('lbStage');
+if (lbStageEl) {
+  lbStageEl.addEventListener('touchstart', lbTouchStart, { passive: false });
+  lbStageEl.addEventListener('touchmove', lbTouchMove, { passive: false });
+  lbStageEl.addEventListener('touchend', lbTouchEnd, { passive: false });
+  lbStageEl.addEventListener('wheel', lbOnWheel, { passive: false });
+  lbStageEl.addEventListener('dblclick', lbOnDbl);
+}
 $('btnLbVerify').onclick = async () => {
   if (!lbImgId) return;
   const meta = Store.imgMeta[lbImgId];
@@ -1080,7 +1208,15 @@ $('btnLbDelete').onclick = async () => {
   try { await Store.idbDel('images', lbImgId); } catch (e) {}
   delete imgCache[lbImgId];
   Store.save();
-  $('lightbox').style.display = 'none';
+  if (it && it.images.length) {
+    lbList = it.images.slice();
+    lbIndex = lbClamp(lbIndex, 0, lbList.length - 1);
+    lbImgId = lbList[lbIndex];
+    lbScale = 1; lbTx = 0; lbTy = 0; lbSwipe = 0; lbPinch = null; lbT0 = null;
+    lbLoad(lbImgId); lbApply();
+  } else {
+    closeLightbox();
+  }
   renderDetail(lbItemId);
   renderList();
 };
@@ -1617,17 +1753,23 @@ $('btnBack').onclick = () => {
   else if (currentView === 'view-list') { renderHome(); showView('view-home'); }
   else if (currentView === 'view-config') { renderHome(); showView('view-home'); }
   else if (currentView === 'view-export') { renderList(); showView('view-list'); }
+  else if (currentView === 'view-settings') { showView('view-home'); }
 };
-$('btnSaveMeasured').onclick = () => {
-  const it = Store.items.find(x => x.id === currentItemId);
-  if (!it) return;
-  it.measured = $('dMeasured').value.trim();
-  it.status = (it.measured || it.images.length) ? 'done' : 'todo';
-  Store.save();
-  Bridge.toast('实测结果已保存');
-  renderDetail(currentItemId);
-  renderList();
-};
+/* 实测结果：输入即自动保存（防抖 500ms） */
+let measuredTimer = null;
+$('dMeasured').addEventListener('input', () => {
+  clearTimeout(measuredTimer);
+  measuredTimer = setTimeout(() => {
+    const it = Store.items.find(x => x.id === currentItemId);
+    if (!it) return;
+    const v = $('dMeasured').value;
+    it.measured = v.trim();
+    it.status = (it.measured || it.images.length) ? 'done' : 'todo';
+    Store.save();
+    const st = $('dStatus');
+    if (st) { st.textContent = it.status === 'done' ? '已完成' : '未完成'; st.className = 'detail-status ' + (it.status === 'done' ? 'ok' : 'todo'); }
+  }, 500);
+});
 $('btnTakePhoto').onclick = () => openCamera(currentItemId);
 $('btnShareFile').onclick = () => {
   if (window.__lastExportPath) Bridge.shareFile(window.__lastExportPath);
